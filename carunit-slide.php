@@ -3,7 +3,7 @@
  * Plugin Name: کاریونیت اسلاید
  * Plugin URI: https://carunit.ir
  * Description: اسلایدر حرفه‌ای محصولات کاریونیت
- * Version: 1.1.0
+ * Version: 1.1.1
  * Author: CarUnit
  * Text Domain: carunit-slide
  */
@@ -38,8 +38,8 @@ class Carunit_Slide {
 
     public function admin_assets( $hook ) {
         if ( $hook !== 'toplevel_page_carunit-slide' ) return;
-        wp_enqueue_style( 'carunit-slide-admin', plugin_dir_url( __FILE__ ) . 'admin.css', array(), '1.1' );
-        wp_enqueue_script( 'carunit-slide-admin', plugin_dir_url( __FILE__ ) . 'admin.js', array( 'jquery' ), '1.1', true );
+        wp_enqueue_style( 'carunit-slide-admin', plugin_dir_url( __FILE__ ) . 'admin.css', array(), '1.1.1' );
+        wp_enqueue_script( 'carunit-slide-admin', plugin_dir_url( __FILE__ ) . 'admin.js', array( 'jquery' ), '1.1.1', true );
         wp_localize_script( 'carunit-slide-admin', 'carunitSlide', array(
             'ajaxurl' => admin_url( 'admin-ajax.php' ),
             'nonce'   => wp_create_nonce( 'carunit_slide' ),
@@ -78,7 +78,7 @@ class Carunit_Slide {
         ?>
         <div class="wrap carunit-admin">
             <div class="carunit-header">
-                <h1>کاریونیت اسلاید</h1>
+                <h1>کاریونیت اسلاید <span style="font-size:14px;opacity:0.7">v1.1.1</span></h1>
                 <p>اسلایدر محصولات صفحه اول</p>
             </div>
             <form method="post" action="options.php" class="carunit-form">
@@ -144,8 +144,8 @@ class Carunit_Slide {
     }
 
     public function enqueue_scripts() {
-        wp_enqueue_style( 'carunit-slide', plugin_dir_url( __FILE__ ) . 'style.css', array(), '1.1' );
-        wp_enqueue_script( 'carunit-slide', plugin_dir_url( __FILE__ ) . 'script.js', array( 'jquery' ), '1.1', true );
+        wp_enqueue_style( 'carunit-slide', plugin_dir_url( __FILE__ ) . 'style.css', array(), '1.1.1' );
+        wp_enqueue_script( 'carunit-slide', plugin_dir_url( __FILE__ ) . 'script.js', array( 'jquery' ), '1.1.1', true );
     }
 
     public function render_shortcode( $atts ) {

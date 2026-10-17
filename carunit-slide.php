@@ -3,7 +3,7 @@
  * Plugin Name: کاریونیت اسلاید
  * Plugin URI: https://carunit.ir
  * Description: اسلایدر حرفه‌ای محصولات کاریونیت
- * Version: 1.1.2
+ * Version: 1.1.3
  * Author: CarUnit
  * Text Domain: carunit-slide
  */
@@ -15,7 +15,6 @@ class Carunit_Slide {
         add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
         add_action( 'admin_init', array( $this, 'register_settings' ) );
         add_action( 'admin_enqueue_scripts', array( $this, 'admin_assets' ) );
-        add_action( 'wp_ajax_carunit_slide_search', array( $this, 'ajax_search_products' ) );
         add_shortcode( 'carunit_slide', array( $this, 'render_shortcode' ) );
         add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_scripts' ) );
     }
@@ -28,54 +27,89 @@ class Carunit_Slide {
 
     public function admin_assets( $hook ) {
         if ( $hook !== 'toplevel_page_carunit-slide' ) return;
-        wp_enqueue_style( 'carunit-slide-admin', plugin_dir_url( __FILE__ ) . 'admin.css', array(), '1.1.2' );
-        wp_enqueue_script( 'carunit-slide-admin', plugin_dir_url( __FILE__ ) . 'admin.js', array( 'jquery' ), '1.1.2', true );
-        wp_localize_script( 'carunit-slide-admin', 'carunitSlide', array( 'ajaxurl' => admin_url( 'admin-ajax.php' ), 'nonce' => wp_create_nonce( 'carunit_slide' ) ) );
+        wp_enqueue_style( 'carunit-slide-admin', plugin_dir_url( __FILE__ ) . 'admin.css', array(), '1.1.3' );
+        wp_enqueue_script( 'carunit-slide-admin', plugin_dir_url( __FILE__ ) . 'admin.js', array( 'jquery' ), '1.1.3', true );
     }
 
-    public function ajax_search_products() {
-        check_ajax_referer( 'carunit_slide', 'nonce' );
-        $term = sanitize_text_field( $_GET['term'] ?? '' );
-        $args = array( 'post_type' => 'product', 'posts_per_page' => 15, 's' => $term, 'post_status' => 'publish' );
-        if ( is_numeric( $term ) ) { $args['post__in'] = array( intval( $term ) ); unset( $args['s'] ); }
-        $q = new WP_Query( $args );
-        $results = array();
-        foreach ( $q->posts as $p ) {
-            $product = wc_get_product( $p->ID );
-            $results[] = array( 'id' => $p->ID, 'name' => $p->post_title, 'price' => $product ? $product->get_price_html() : '', 'image' => get_the_post_thumbnail_url( $p->ID, 'thumbnail' ) );
+    private function get_category_tree( $parent = 0 ) {
+        $terms = get_terms( array( 'taxonomy' => 'product_cat', 'parent' => $parent, 'hide_empty' => false, 'orderby' => 'name' ) );
+        $tree = array();
+        if ( is_wp_error( $terms ) ) return $tree;
+        foreach ( $terms as $term ) {
+            $products = get_posts( array(
+                'post_type' => 'product', 'posts_per_page' => -1, 'post_status' => 'publish',
+                'tax_query' => array( array( 'taxonomy' => 'product_cat', 'field' => 'term_id', 'terms' => $term->term_id, 'include_children' => false ) ),
+                'orderby' => 'title', 'order' => 'ASC',
+            ) );
+            $items = array();
+            foreach ( $products as $p ) {
+                $items[] = array( 'id' => $p->ID, 'name' => $p->post_title, 'image' => get_the_post_thumbnail_url( $p->ID, 'thumbnail' ) );
+            }
+            $tree[] = array( 'id' => $term->term_id, 'name' => $term->name, 'products' => $items, 'children' => $this->get_category_tree( $term->term_id ) );
         }
-        wp_send_json( $results );
+        return $tree;
+    }
+
+    private function render_tree( $tree, $slider_id, $selected ) {
+        if ( empty( $tree ) ) return;
+        echo '<ul class="cu-tree">';
+        foreach ( $tree as $node ) {
+            $has = ! empty( $node['children'] ) || ! empty( $node['products'] );
+            echo '<li class="cu-tree-item">';
+            if ( $has ) echo '<span class="cu-toggle">+</span> ';
+            echo '<span class="cu-cat-name">' . esc_html( $node['name'] ) . '</span>';
+            if ( ! empty( $node['products'] ) ) {
+                echo '<ul class="cu-products" style="display:none">';
+                foreach ( $node['products'] as $prod ) {
+                    $checked = in_array( $prod['id'], $selected ) ? 'checked' : '';
+                    $img = $prod['image'] ? '<img src="' . esc_url( $prod['image'] ) . '">' : '';
+                    echo '<li><label class="cu-prod-label"><input type="checkbox" class="cu-prod-check" data-slider="' . $slider_id . '" value="' . $prod['id'] . '" ' . $checked . '> ' . $img . ' <span>' . esc_html( $prod['name'] ) . '</span></label></li>';
+                }
+                echo '</ul>';
+            }
+            if ( ! empty( $node['children'] ) ) {
+                echo '<div class="cu-children" style="display:none">';
+                $this->render_tree( $node['children'], $slider_id, $selected );
+                echo '</div>';
+            }
+            echo '</li>';
+        }
+        echo '</ul>';
     }
 
     public function settings_page() {
         $settings = get_option( 'carunit_slide_settings', array() );
+        $tree = $this->get_category_tree( 0 );
         ?>
         <div class="wrap carunit-admin">
             <div class="carunit-header">
-                <h1>کاریونیت اسلاید <span class="ver">v1.1.2</span></h1>
-                <p>اگر همه اسلایدرها خاموش باشند، بخش پرفروش‌ها مثل قبل نمایش داده می‌شود.</p>
+                <h1>کاریونیت اسلاید <span class="ver">v1.1.3</span></h1>
+                <p>محصولات را از درخت دسته‌بندی انتخاب کنید.</p>
             </div>
             <form method="post" action="options.php">
                 <?php settings_fields( 'carunit_slide_group' ); ?>
                 <div class="carunit-grid">
-                <?php for ( $i = 1; $i <= 4; $i++ ) : $s = $settings["slider_$i"] ?? array(); $enabled = ! empty( $s['enabled'] ); ?>
+                <?php for ( $i = 1; $i <= 4; $i++ ) :
+                    $s = $settings["slider_$i"] ?? array();
+                    $enabled = ! empty( $s['enabled'] );
+                    $selected = array_filter( array_map( 'intval', explode( ',', $s['products'] ?? '' ) ) );
+                ?>
                     <div class="carunit-card">
-                        <div class="carunit-card-head"><h2>اسلایدر <?php echo $i; ?></h2>
+                        <div class="carunit-card-head">
+                            <h2>اسلایدر <?php echo $i; ?></h2>
                             <label class="carunit-switch"><input type="checkbox" name="carunit_slide_settings[slider_<?php echo $i; ?>][enabled]" value="1" <?php checked( $enabled ); ?>><span class="slider"></span></label>
                         </div>
-                        <div class="carunit-field"><label>عنوان</label><input type="text" name="carunit_slide_settings[slider_<?php echo $i; ?>][title]" value="<?php echo esc_attr( $s['title'] ?? '' ); ?>" placeholder="مثلاً پرفروش‌های کانکتیکس"></div>
-                        <div class="carunit-field carunit-search-wrap"><label>محصولات</label>
-                            <input type="text" class="carunit-product-search" data-slider="<?php echo $i; ?>" placeholder="نام یا شناسه...">
+                        <div class="carunit-field"><label>عنوان</label><input type="text" name="carunit_slide_settings[slider_<?php echo $i; ?>][title]" value="<?php echo esc_attr( $s['title'] ?? '' ); ?>"></div>
+                        <div class="carunit-field">
+                            <label>انتخاب محصولات</label>
                             <input type="hidden" name="carunit_slide_settings[slider_<?php echo $i; ?>][products]" class="carunit-product-ids" value="<?php echo esc_attr( $s['products'] ?? '' ); ?>">
-                            <div class="carunit-selected" data-slider="<?php echo $i; ?>"></div>
-                            <div class="carunit-results" data-slider="<?php echo $i; ?>"></div>
+                            <div class="cu-tree-wrap" data-slider="<?php echo $i; ?>"><?php $this->render_tree( $tree, $i, $selected ); ?></div>
                         </div>
                         <div class="carunit-row">
                             <div class="carunit-field"><label>حالت</label><select name="carunit_slide_settings[slider_<?php echo $i; ?>][autoplay]"><option value="1" <?php selected( $s['autoplay'] ?? 1, 1 ); ?>>خودکار</option><option value="0" <?php selected( $s['autoplay'] ?? 1, 0 ); ?>>دستی</option></select></div>
                             <div class="carunit-field"><label>جهت</label><select name="carunit_slide_settings[slider_<?php echo $i; ?>][direction]"><option value="rtl" <?php selected( $s['direction'] ?? 'rtl', 'rtl' ); ?>>راست به چپ</option><option value="ltr" <?php selected( $s['direction'] ?? 'rtl', 'ltr' ); ?>>چپ به راست</option></select></div>
                             <div class="carunit-field"><label>سرعت</label><input type="number" name="carunit_slide_settings[slider_<?php echo $i; ?>][speed]" value="<?php echo esc_attr( $s['speed'] ?? 3000 ); ?>"></div>
                         </div>
-                        <div class="carunit-preview" data-slider="<?php echo $i; ?>"><div class="preview-label">پیش‌نمایش</div><div class="preview-box">محصولی انتخاب نشده</div></div>
                         <div class="carunit-shortcode">شورت‌کد: <code>[carunit_slide id="<?php echo $i; ?>"]</code></div>
                     </div>
                 <?php endfor; ?>
@@ -87,8 +121,8 @@ class Carunit_Slide {
     }
 
     public function enqueue_scripts() {
-        wp_enqueue_style( 'carunit-slide', plugin_dir_url( __FILE__ ) . 'style.css', array(), '1.1.2' );
-        wp_enqueue_script( 'carunit-slide', plugin_dir_url( __FILE__ ) . 'script.js', array( 'jquery' ), '1.1.2', true );
+        wp_enqueue_style( 'carunit-slide', plugin_dir_url( __FILE__ ) . 'style.css', array(), '1.1.3' );
+        wp_enqueue_script( 'carunit-slide', plugin_dir_url( __FILE__ ) . 'script.js', array( 'jquery' ), '1.1.3', true );
     }
 
     public function render_shortcode( $atts ) {
